@@ -1,13 +1,18 @@
 package JHA;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
-5
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
+
 /*
  * Zach Oliver
  * Banno JHA 2018 internship project
@@ -23,17 +28,18 @@ public class bannoHTMLReader{
     	String content = null;
 		String currentLine = null;
 		String twitter = null;
-		String country = null;
-		String state = null;
-		String city = null;
-		String address = null;
+		String jsonString = "";
+		boolean addressJson = false;
+		boolean isPlatformFeature = true;	
 		int pngCount = 0;
 		int finanInstCount = 0;
 		int platformCount = 0;
-		int currentLineLength = 0;
-		AlphaNumeric alphaNumCount = new AlphaNumeric();
+		int bracketPairs = 0;
+		HashMap<String, Integer> characterMap = new HashMap<>();
+		HTMLLine HTMLCurrentLine;
 
-        try {
+		//making the request to banno.com
+		try {
 
             String url = "http://www.banno.com";
             HttpClient client = HttpClientBuilder.create().build();
@@ -56,126 +62,151 @@ public class bannoHTMLReader{
 		//Splitting content by \n to get into an array of lines
         String[] lines = content.split("\n");	
 	    
-        //loop though array of lines
+        //Loop though array of lines
         for (int lineIndex = 0; lineIndex < lines.length; lineIndex++)
 	    {
 	        
-	    	//Save lines[lineIdex] and remove excess white space and set it to lower case 
+	    	//Saves lines[lineIdex], removes excess white space and sets it to lower case 
 	    	currentLine = lines[lineIndex].toLowerCase().trim();
-	    	currentLineLength = currentLine.length();
-        	
-	    	//Grabs Banno's twitter handle from the line containing twitter:site
-	    	if (currentLine.contains("twitter:site"))
+	    	
+	    	//Saves current line into a customLine object
+	    	HTMLCurrentLine =  new HTMLLine(currentLine);
+	    	
+	    	//Counts the occurrence of alphanumeric characters in HTMLCurrentLine
+	    	characterMap = (HashMap<String, Integer>) HTMLCurrentLine.AlphanumericCounter(characterMap);        	
+	    	
+	    	//Grabs Banno's twitter handle if present in HTMLCurrentLine
+	    	if (twitter == null)
 	    	{	    		
-	    		twitter = currentLine.substring(35,currentLineLength-2);
-	    	}
-	    	    		    			    	
-	    	//if the the line at lineIndex contains financial institution then increment finanInstCount
-	    	if (currentLine.contains("financial institution"))
-	    	{	    			    		
-	    		finanInstCount++;		    	
+	    		twitter = HTMLCurrentLine.getTwitterHandle();
 	    	}
 	    	
-			country = Location(currentLine, currentLineLength,"addresscountry");
-			state = Location(currentLine, currentLineLength,"addressregion");
-			city = Location(currentLine, currentLineLength,"addresslocality");
-			address = Location(currentLine, currentLineLength,"streetaddress");
+	    	isPlatformFeature = HTMLCurrentLine.isPlatformFeature();
 	    	
-			/*
-			if (currentLine.contains("addresscountry"))
-	    	{	    			    		
-	    		country = currentLine.substring(19,currentLineLength -2);		    	
+	    	if(isPlatformFeature)
+	    	{
+	    		platformCount++;
 	    	}
 	    	
-	    	if (currentLine.contains("addressregion"))
-	    	{	    			    		
-	    		state = currentLine.substring(18,currentLineLength -1);		    	
-	    	}
+	    	//Checks HTMLCurrentLine to see how many times it contains financial institution
+	    	finanInstCount = finanInstCount + HTMLCurrentLine.wordCount("financial institution");
 	    	
-	    	if (currentLine.contains("addresslocality"))
-	    	{	    			    		
-	    		city = currentLine.substring(20,currentLineLength -2);		    	
-	    	}					
+	    	//Checks HTMLCurrentLine to see how many times it contains .png
+	    	pngCount = pngCount + HTMLCurrentLine.wordCount(".png");
 	    	
-	    	if (currentLine.contains("streetaddress"))
-	    	{	    			    		
-	    		address = currentLine.substring(18,currentLineLength -2);		    	
-	    	}
-	    	*/
-	    	
-	    	//trigger for a line containing non alphanumeric characters    	 	
-	    	boolean isNotPlatformFeauture = false;			
-	    	
-	    	//Cycle through for length of currentLine
-	    	for (int letterIndex = 0; letterIndex < currentLineLength; letterIndex++)
-	    	{	    		
-	    		String currentCharacter = currentLine.substring(letterIndex,letterIndex+1);
-	    		//if letterIndex is a . then check next four characters to see if it is .png and increment pngCount if true	    		
-	    		//check to see if .png is in index range
-	    		boolean letterEqualsPeriod = currentCharacter.equals(".");
-	    		if(letterEqualsPeriod && (letterIndex + 4) < currentLineLength )
-	    		{	    				    			
-	    			if (currentLine.substring(letterIndex,letterIndex+4).equals(".png"))
-	    			{
-	    				pngCount++;	    		
-	    			}	
-	    		}
-
-	    		//checks to see if the current character is alphanumeric	    			    		
-	    		if (alphaNumCount.isAlphaNumeric(currentCharacter))
-	    		{	    		 	
-	    			//calls update on the the character to update the pair in the array	    			
-	    			alphaNumCount.update(currentCharacter);
+	    	//If at a section of JSON code, enter
+	    	if (addressJson == true)
+	    	{	    			
+	    		//This line was missing a , in the HTML so i'm using this to add it in
+	    		if(currentLine.contains("required html5 support"))
+	    		{
+	    			jsonString = jsonString.concat(currentLine.concat(","));
 	    		}
 	    		
-	    		//trigger for a character not being alphanumeric, excluding white space
-	    		else if (!currentCharacter.equals(" ") )
+	    		else
+	    		{	
+	    			//Adds json line to the jsonString
+	    			jsonString = jsonString.concat(currentLine);
+	    		}	    	    			    		
+	    		
+	    		//Count for knowing that we are inside a set of braces
+	    		if (currentLine.contains("{"))
 	    		{
-	    			isNotPlatformFeauture = true;
-	    		}	    		
+	    			bracketPairs++;
+	    		}
+	    		
+	    		//If } is encountered reduce bracketPairs by 1
+	    		if (currentLine.contains("}"))
+	    		{	    			 	    			
+	    			bracketPairs--;
+	    		}
+	    		
+	    		//If bracketPairs is reduced to zero it means we are no longer in the json
+				if(bracketPairs == 0)
+	    		{
+	    			addressJson = false;
+	    		}
+	    	}	
+	    	
+	    	//Boolean for recognizing the next lines are a json
+	    	if(currentLine.contains("json"))
+	    	{
+	    		addressJson = true;
+	    	}	    		    		    			    		   			    		    	
+	    }	    		    
+
+        //Storing the json string into a JsonObject
+	    JsonObject jsonObject = new Gson().fromJson(jsonString, JsonObject.class);
+	    
+	    //Getting the nested Address Json out of the JsonObject and into a map
+	    Map<String, Object> addressMap = new Gson().fromJson(jsonObject.get("address"), new TypeToken<HashMap<String, Object>>() {}.getType());
+	    
+	    //Getting needed information out of addressMap	    
+	    String city = (String) addressMap.get("addresslocality");
+	    String state = (String) addressMap.get("addressregion");
+	    String country = (String) addressMap.get("addresscountry");
+	    String address = (String) addressMap.get("streetaddress");
+	    
+	    //Getting the top three occurring alphanumeric characters from the array
+	    String[] topThree = getTopThreeAlphanumeric(characterMap);
+	    
+	    //Printing to console
+	    System.out.println("The first most occuring alphanumeric character is: "+topThree[0]+ " at "+characterMap.get(topThree[0]));
+	    System.out.println("The second most occuring alphanumeric character is: "+topThree[1]+" at "+characterMap.get(topThree[1]));
+	    System.out.println("The third most occuring alphanumeric character is: "+topThree[2]+" at "+characterMap.get(topThree[2]));
+	    System.out.println("You can tweet Banno "+twitter);
+	    System.out.println("The total number of .png images is: "+pngCount);
+	    System.out.println("The number of times finacial institution appears in the HTML is: "+finanInstCount);	
+	    System.out.println("The number of platforms Banno covers is: "+ platformCount); 
+	    System.out.println("Banno is located in the "+country+", in the state of "+state.toUpperCase()+", at the location "+address+ " " +city);	   	    							    		
+
+	}
+	
+	//Helper function for getting the top three occurring elements of a map<String,int>
+	static String[] getTopThreeAlphanumeric(HashMap<String, Integer> characterMap)
+	{
+		String first = "a";
+		String second = "a";
+		String third = "a";
+		String currentLetter = "";
+		String[] returnArray = new String[3];
+		Object[] keyArray =  characterMap.keySet().toArray();
+		int keyArrayLength = keyArray.length;
+	    
+		//Cycle though for length of keyArray
+		for(int currentKey = 0; currentKey < keyArrayLength; currentKey++) 
+	    {
+			currentLetter = (String) keyArray[currentKey];
+	    	
+			//If the value paired with the character is greater than the value of the character value
+			//of first, push all values down and set first to the current character
+			if(characterMap.get(currentLetter) >= characterMap.get(first))
+	    	{
+	    		third = second;
+	    		second = first;
+	    		first = currentLetter;	    		
 	    	}
 	    	
-	    	//if current line contains no non alphanumeric characters, does not equal web, and isn't an empty string	   
-    		if(isNotPlatformFeauture == false && !currentLine.equals("web") && !currentLine.isEmpty())
-    		{    			
-    			platformCount++;				
-    		}	    
-	    }	    		    
-	    Pair[] topThree = alphaNumCount.topThreeOccurringAlphanumericCharacters();
-	    System.out.println("The first most occuring alphanumeric character is: "+topThree[0].getKey()+" " + "at" +  " " + topThree[0].getPairValue());
-	    System.out.println("The second most occuring alphanumeric character is: "+topThree[1].getKey()+" " + "at" +  " " + topThree[1].getPairValue());
-	    System.out.println("The third most occuring alphanumeric character is: "+topThree[2].getKey()+" " + "at" +  " " + topThree[2].getPairValue());
-	    System.out.println("You can tweet Banno "+ twitter);
-	    System.out.println("The total number of .png images is "+ pngCount);
-	    System.out.println("The number of times finacial institution appears in the HTML is "+ finanInstCount);	
-	    System.out.println("The number of platforms Banno covers is: " + platformCount);  
-	    System.out.println("Banno is located in the " +country+ " in the state of " +state+ " in the city of " +city+  " at " + address);
-	}           
-
-	public static String Location(String line, int lineLength, String address)
-	{
-		
-		int addressLength = address.length();
-		String addressInfo = null;
-		if (line.contains(address))
-		{
-			
-			if (line.endsWith(","))
-			{
-				
-				addressInfo = line.substring(addressLength+5, lineLength-2);
-				return addressInfo;
-
-			}
-			
-			else
-			{
-				System.out.println(addressInfo);
-				addressInfo = line.substring(addressLength+5, lineLength-1);
-			}
-		}
-		
-		
+			//If the value paired with the character is greater than the value of the character value
+			//of second, push all values down and set second to the current character
+			else if(characterMap.get(currentLetter) >= characterMap.get(second))
+	    	{
+	    		third = second;
+	    		second = currentLetter;	    			    		
+	    	}
+	    	
+			//If the value paired with the character is greater than the value of the character value
+			//of third, set third to the current character
+	    	else if(characterMap.get(currentLetter) >= characterMap.get(third))
+	    	{
+	    		third = currentLetter;
+	    	}
+	    }
+	    //Load values into returnArray
+		returnArray[0] = first;
+	    returnArray[1] = second;
+	    returnArray[2] = third;	    
+	    return returnArray;
 	}
 
 }
